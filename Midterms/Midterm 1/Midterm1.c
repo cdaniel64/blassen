@@ -9,8 +9,8 @@
 #define UBRR_115200 3						// defined for 8Mhz with 8.5% error
 
 #define Domain "api.thingspeak.com"			//create domain to communicate with thingspeak	
-#define API_Write_Key "K6HINW5F75HTUPI8"	//API ID Key Number
-#define Channel_ID "467279"					//ID of channel used for the project
+#define API_Write_Key "TX0EL61BIR6SH2GO"	//API ID Key Number
+#define Channel_ID "752877"					//ID of channel used for the project
 #define SSID ""								
 #define Password ""
 
