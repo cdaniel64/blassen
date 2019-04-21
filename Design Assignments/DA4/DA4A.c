@@ -1,0 +1,126 @@
+/*
+ * GccApplication11.c
+ *
+ * Created: 4/10/2019 8:21:07 PM
+ * Author : cdani
+ */ 
+
+#define F_CPU 16000000UL	//initializes CPU
+#include <avr/io.h>			//avr libraries
+#include <stdio.h>
+#include <util/delay.h>
+#include <avr/interrupt.h>
+
+// Define Baudrate for UART (typically 9600)
+#define BAUDRATE 9600
+#define BAUD_PRESCALLER (((F_CPU / (BAUDRATE * 16UL))) - 1)
+
+// Function Declarations that we do not want to be printed
+void read_adc(void);
+void adc_init(void);
+void USART_init( unsigned int ubrr );
+void USART_tx_string( char *data );
+volatile unsigned int adc_temp;
+char outs[20];
+
+int main(void)
+{
+	adc_init();							// Initialize ADC
+	USART_init(BAUD_PRESCALLER);		// Initialize USART
+	USART_tx_string("Online!\r\n");		//system is online
+	_delay_ms(125);						//delay of 125ms
+	DDRD = 0xFF;						//DDRD = (1<<3); // Set Port D as an output direction THIS IS REQUIRED TO OUTPUT THE PWM
+	/* Next line of code will do the following
+	Set the compare output mode to clear OC2A and OC2B on compare match.
+	Set bits COM2A1 and COM2B1 to high.
+	Set the waveform generation mode to fast PWM (mode 3 in datasheet).
+	Set bits WGM21 and WGM20 to high.*/
+	TCCR2A = _BV(COM2A1) | _BV(COM2B1) | _BV(WGM21) | _BV(WGM20);
+	/* Next line of code does the following
+	Set the waveform generation mode to fast PWM mode 7 —reset counter on
+	OCR2A value instead of the default 255. To achieve this, we set bit
+	Set WGM22 to high.
+	Set the prescaler divisor to 1, so that our counter will be fed with
+	the clock's full frequency (16MHz). To achieve this, we set CS20 to
+	high (and keep CS21 and CS22 to low by not setting them). */
+	TCCR2B = _BV(WGM22) | _BV(CS20) | _BV(CS21) | _BV(CS22);
+	// OCR2A holds the top value of our counter; When our counter reaches this value, it resets.
+	OCR2A = 255;
+	// This is the duty cycle. Can't be greater than OCR2A
+	OCR2B = 0;
+	PCMSK1 |= (1<<PCINT10);
+	PCICR |= (1<<PCIE1);
+	sei();
+	while (1)
+	{
+		read_adc();
+		_delay_ms(250);									// Delay of 250ms
+		adc_temp = adc_temp/4;
+		snprintf(outs,sizeof(outs),"%3d\r\n", adc_temp);// print value
+		USART_tx_string(outs);							// Print random integer number
+		OCR2B = adc_temp;								// Replace with ADC value
+	}
+}
+
+/* INIT ADC */
+void adc_init(void)
+{
+	/** Setup and enable ADC **/
+	ADMUX = (0<<REFS1)|    // Reference Selection Bits
+	(1<<REFS0)|    // AVcc - external cap at AREF
+	(0<<ADLAR)|    // ADC Left Adjust Result
+	(0<<MUX2)|     // Analog Channel Selection Bits
+	(0<<MUX1)|     // ADC0 (PC0 PIN27)
+	(0<<MUX0);
+	ADCSRA = (1<<ADEN)|    // ADC ENable
+	(0<<ADSC)|     // ADC Start Conversion
+	(0<<ADATE)|    // ADC Auto Trigger Enable
+	(0<<ADIF)|     // ADC Interrupt Flag
+	(0<<ADIE)|     // ADC Interrupt Enable
+	(1<<ADPS2)|    // ADC Prescaler Select Bits
+	(0<<ADPS1)|
+	(1<<ADPS0);
+}
+/* READ ADC PINS */
+void read_adc(void)
+{
+	unsigned char i = 4;
+	adc_temp = 0;
+	while (i--)
+	{
+		ADCSRA |= (1<<ADSC);
+		while(ADCSRA & (1<<ADSC));
+		adc_temp+= ADC;
+		_delay_ms(50);
+	}
+	adc_temp = adc_temp / 4;  // Average a few samples
+}
+/* INIT USART (RS-232)  */
+void USART_init( unsigned int ubrr )
+{
+	UBRR0H = (unsigned char)(ubrr>>8);
+	UBRR0L = (unsigned char)ubrr;
+	UCSR0B = (1 << TXEN0);     // Enable RX, TX & RX interrupt
+	UCSR0C = (3 << UCSZ00);    //asynchronous 8 N 1
+}
+/* SEND A STRING TO THE RS-232 */
+void USART_tx_string( char *data )
+{
+	while ((*data != '\0'))
+	{
+		while (!(UCSR0A & (1 <<UDRE0)));
+		UDR0 = *data;
+		data++;
+	}
+}
+
+ISR(PCINT1_vect){
+	DDRD ^= 0xFF;
+	_delay_ms(1000);			//Delay of 1s
+	char check = "Pin Change ";
+	USART_tx_string(check);		// Print random integer number
+								// Check if I bit is set in IREG
+}
+
+								// use header - util/atomic.h
+								// specify as an atomic function and it will not be interrupted.
